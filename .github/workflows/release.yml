@@ -42,9 +42,9 @@ jobs:
 
       - name: Rename .deb for release
         run: |
-          cp pve-compose_${{ steps.version.outputs.tag }}-1_all.deb \
+          cp ../pve-compose_${{ steps.version.outputs.tag }}-1_all.deb \
              pve-compose_${{ steps.version.outputs.tag }}_all.deb
-          cp pve-compose_${{ steps.version.outputs.tag }}-1_all.deb \
+          cp ../pve-compose_${{ steps.version.outputs.tag }}-1_all.deb \
              pve-compose_all.deb
 
       - name: Create GitHub Release

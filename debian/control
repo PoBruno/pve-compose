@@ -10,6 +10,7 @@ Package: pve-compose
 Architecture: all
 Depends: jq, ${misc:Depends}
 Recommends: pve-container
+Suggests: bash-completion
 Description: Docker Compose orchestration for Proxmox LXC
  pve-compose transparently orchestrates Docker Compose stacks inside
  LXC containers on Proxmox VE. It creates the LXC, installs Docker,

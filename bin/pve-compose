@@ -1,0 +1,120 @@
+#!/bin/sh
+# pve-compose - Docker Compose orchestration for Proxmox LXC
+# Entry point: flag parsing + dynamic command dispatch
+set -eu
+
+PVC_VERSION="0.1.0"
+
+# ── Resolve PVC_LIB (where lib/, commands/, scripts/ live) ──
+if [ -d "/usr/lib/pve-compose" ]; then
+    PVC_LIB="/usr/lib/pve-compose"
+else
+    _self="$0"
+    if command -v readlink >/dev/null 2>&1; then
+        _self="$(readlink -f "$0")"
+    fi
+    PVC_LIB="$(cd "$(dirname "$_self")/.." && pwd)"
+fi
+export PVC_LIB PVC_VERSION
+
+# ── Source core lib ──
+. "$PVC_LIB/lib/output.sh"
+
+# ── Globals (set by flags) ──
+PVC_DEBUG="${PVC_DEBUG:-0}"
+PVC_DRY_RUN="${PVC_DRY_RUN:-0}"
+export PVC_DEBUG PVC_DRY_RUN
+
+# ── Usage ──
+usage() {
+    cat <<EOF
+Usage: pve-compose [OPTIONS] COMMAND [ARGS...]
+
+Docker Compose orchestration for Proxmox LXC
+
+Options:
+  --debug       Enable debug output
+  --dry-run     Show what would be done without executing
+  --version     Show version
+  --help        Show this help
+
+pve-compose Commands:
+  init          Create global config with auto-detected defaults
+  plan          Resolve config and generate lxc.json (dry-run)
+  up            Create LXC, install Docker, run compose up
+  destroy       Compose down + stop and destroy LXC
+  shell         Open interactive shell in the LXC
+  status        Show LXC and compose status
+  version       Show pve-compose version
+  template      Manage LXC templates (create/list/remove)
+
+Compose Commands (pass-through to docker compose):
+  attach build commit config cp create down events exec export
+  images kill logs ls pause port ps pull push restart rm run
+  scale start stats stop top unpause wait watch
+
+Run 'pve-compose COMMAND --help' for more information on a command.
+EOF
+}
+
+# ── Parse global flags ──
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --debug)
+            PVC_DEBUG=1
+            export PVC_DEBUG
+            shift
+            ;;
+        --dry-run)
+            PVC_DRY_RUN=1
+            export PVC_DRY_RUN
+            shift
+            ;;
+        --version)
+            printf 'pve-compose %s\n' "$PVC_VERSION"
+            exit 0
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        -*)
+            die "Unknown option: $1"
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+# ── No command? Show usage ──
+if [ $# -eq 0 ]; then
+    usage
+    exit 0
+fi
+
+# ── Command dispatch ──
+_cmd="$1"
+shift
+
+# Security: only allow [a-z0-9-] in command name
+case "$_cmd" in
+    *[!a-z0-9-]*)
+        die "Invalid command: $_cmd"
+        ;;
+esac
+
+_cmd_file="$PVC_LIB/commands/${_cmd}.sh"
+
+if [ ! -f "$_cmd_file" ]; then
+    die "Unknown command: $_cmd (run 'pve-compose --help' for available commands)"
+fi
+
+debug "Dispatching command: $_cmd"
+
+# shellcheck source=/dev/null
+. "$_cmd_file"
+
+# Convert dashes to underscores for function name
+_func_name=$(printf '%s' "$_cmd" | tr '-' '_')
+"cmd_${_func_name}" "$@"

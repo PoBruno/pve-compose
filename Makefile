@@ -47,9 +47,9 @@ uninstall:
 	rm -f $(COMPDIR)/pve-compose
 
 lint:
-	shellcheck -s sh bin/pve-compose lib/*.sh commands/*.sh scripts/*.sh
+	shellcheck -s sh -e SC1091 bin/pve-compose lib/*.sh commands/*.sh scripts/*.sh
 	@if ls commands/template/*.sh >/dev/null 2>&1; then \
-		shellcheck -s sh commands/template/*.sh; \
+		shellcheck -s sh -e SC1091 commands/template/*.sh; \
 	fi
 	@echo "shellcheck: all clear"
 

@@ -1,0 +1,17 @@
+# Build artifacts
+*.deb
+README.md.bak
+debian/pve-compose/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/pve-compose.substvars
+
+# Editor
+*.swp
+*.swo
+*~
+
+# keep workflows for CI
+.github/*
+!.github/workflows/

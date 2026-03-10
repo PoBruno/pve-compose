@@ -1,0 +1,17 @@
+Source: pve-compose
+Section: admin
+Priority: optional
+Maintainer: pve-compose maintainers <noreply@pve-compose.dev>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: pve-compose
+Architecture: all
+Depends: jq, ${misc:Depends}
+Recommends: pve-container
+Description: Docker Compose orchestration for Proxmox LXC
+ pve-compose transparently orchestrates Docker Compose stacks inside
+ LXC containers on Proxmox VE. It creates the LXC, installs Docker,
+ configures bind mounts, resolves permissions, and runs docker compose
+ - all automatically from a single command.

@@ -2,7 +2,7 @@
 
 **One Compose stack per LXC. Fully automated. Backed up by your storage.**
 
-If you manage Docker Compose stacks manually and want each one isolated in its own LXC container — with its own resources, its own restart, its own backup — pve-compose does it all for you. Write a `docker-compose.yml`, run `pve-compose up -d`, done.
+If you manage Docker Compose stacks manually and want each one isolated in its own LXC container, with its own resources, its own restart, its own backup, pve-compose does it all for you. Write a `docker-compose.yml`, run `pve-compose up -d`, done.
 
 ## How It Works
 
@@ -14,11 +14,11 @@ graph LR
 
     subgraph B["Your Storage"]
         direction TB
-        D1["<b>📁 /data/app/traefik &nbsp;&nbsp;&nbsp;</b><br/>📄 docker-compose.yml<br/>📄 lxc.json &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp<br/>📂 config/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"]
+        D1["<b>📁 /data/app/traefik &nbsp;&nbsp;&nbsp;</b><br/>📄 docker-compose.yml<br/>📄 lxc.json &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp<br/>📂 config/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"]
         
-        D2["<b>📁 /data/app/nextcloud </b><br/>📄 docker-compose.yml<br/>📄 lxc.json &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 data/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 config/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"]
+        D2["<b>📁 /data/app/nextcloud </b><br/>📄 docker-compose.yml<br/>📄 lxc.json &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 data/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 config/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"]
         
-        D3["<b>📁 /data/app/monitoring</b><br/>📄 docker-compose.yml &nbsp;<br/>📄 lxc.json &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 grafana/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 prometheus/ &nbsp;&nbsp;&nbsp;&nbsp;"]
+        D3["<b>📁 /data/app/monitoring</b><br/>📄 docker-compose.yml &nbsp;<br/>📄 lxc.json &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 grafana/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 prometheus/ &nbsp;&nbsp;&nbsp;&nbsp;"]
     end
 
     D1 -->|"bind mount"| C1["🐳 LXC 100<br/>traefik"]
@@ -30,29 +30,29 @@ Each folder contains the `docker-compose.yml` **and** its persistent data (volum
 
 ### The key insight: your storage _is_ the backup
 
-When you keep compose volumes as local directories (not Docker-managed volumes), everything lives in one place — your storage. With ZFS, Ceph, or any Proxmox-managed storage:
+When you keep compose volumes as local directories (not Docker-managed volumes), everything lives in one place, your storage. With ZFS, Ceph, or any Proxmox-managed storage:
 
 - **ZFS snapshots** = instant point-in-time backup of all services
 - **ZFS replication** = offsite copy, automated
 - **Disk mirroring** (mirror/raidz) = redundancy built in
-- **No backup jobs needed** — no `vzdump`, no Docker volume exports, no cron scripts
+- **No backup jobs needed** - no `vzdump`, no Docker volume exports, no cron scripts
 
-The whole `/data/app/` tree — every compose file, every config, every database file — is protected at the storage level. Clone the disk, replicate it, snapshot it. That's your backup plan.
+The whole `/data/app/` tree - every compose file, every config, every database file, is protected at the storage level. Clone the disk, replicate it, snapshot it. That's your backup plan.
 
 > **This is Infrastructure as Code by convention.** Each folder is a self-contained, portable service definition. Copy the folder to another Proxmox host, run `pve-compose up -d`, same stack.
 
 ## Features
 
-- **Zero-config** — drop a `docker-compose.yml` in a folder, run `pve-compose up -d`
-- **`$PWD` is the context** — always run pve-compose from the folder with your `docker-compose.yml`
-- **Template cloning** — create a Docker-ready template once, clone in ~10 seconds
-- **Fast path** — subsequent `up` on running containers completes in < 0.5s
-- **Full compose pass-through** — `logs`, `exec`, `ps`, `pull`, `restart`, and 25+ more
-- **Health checks** — `pve-compose doctor` validates Docker, DNS, mount, compose
-- **Hot-apply** — `pve-compose apply` changes memory, CPU, tags without restart
-- **Interactive wizard** — TUI menus for setup and template creation
-- **Pure POSIX shell** — `sh` + `jq`. Runs on any Proxmox host out of the box
-- **Bash completion** — tab-complete commands, flags, and service names
+- **Zero-config** - drop a `docker-compose.yml` in a folder, run `pve-compose up -d`
+- **`$PWD` is the context** - always run pve-compose from the folder with your `docker-compose.yml`
+- **Template cloning** - create a Docker-ready template once, clone in ~10 seconds
+- **Fast path** - subsequent `up` on running containers completes in < 0.5s
+- **Full compose pass-through** - `logs`, `exec`, `ps`, `pull`, `restart`, and 25+ more
+- **Health checks** - `pve-compose doctor` validates Docker, DNS, mount, compose
+- **Hot-apply** - `pve-compose apply` changes memory, CPU, tags without restart
+- **Interactive wizard** - TUI menus for setup and template creation
+- **Pure POSIX shell** - `sh` + `jq`. Runs on any Proxmox host out of the box
+- **Bash completion** - tab-complete commands, flags, and service names
 
 ## Requirements
 
@@ -182,7 +182,7 @@ $PWD (your project folder)
   └── Runs docker compose up -d
 ```
 
-Every command (`status`, `logs`, `exec`, `down`, `destroy`, ...) works from the same folder — `$PWD` is always the context.
+Every command (`status`, `logs`, `exec`, `down`, `destroy`, ...) works from the same folder, `$PWD` is always the context.
 
 ## Configuration
 
@@ -242,158 +242,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 ## License
 
 [MIT](LICENSE)
-
-## Arquitetura do código (Go)
-
-```
-pve-compose/
-├── cmd/
-│   ├── init.go             # pve-compose init (config global)
-│   ├── up.go
-│   ├── logs.go
-│   ├── down.go
-│   ├── destroy.go
-│   └── template.go         # template create/list/remove
-├── internal/
-│   ├── engine/
-│   │   └── resolver.go     # Engine de resolução (config global + auto-detect + validação)
-│   ├── proxmox/
-│   │   ├── pct.go          # Wrapper de comandos pct
-│   │   └── api.go          # Integração REST API Proxmox
-│   ├── lxc/
-│   │   ├── create.go       # Criação do container
-│   │   ├── mount.go        # Mountpoints
-│   │   └── template.go     # Criação/gestão de templates
-│   ├── docker/
-│   │   ├── compose.go      # Execução docker compose
-│   │   └── bootstrap.go    # Docker check + install
-│   └── permissions/
-│       └── uidmap.go        # Cálculo de UID/GID mapping
-├── pkg/
-│   └── config/
-│       ├── lxc.go           # Parser do lxc.json
-│       └── compose.go       # Parser do docker-compose.yml
-└── main.go
-```
-
-### Por que Go?
-
-- CLI rápida e single binary
-- Fácil distribuição
-- Concorrência nativa
-- Bibliotecas existentes: `go-proxmox`
-
-### Comunicação com Proxmox
-
-**Fase 1:** CLI (`pct create`, `pct exec`, `pct start`)
-**Fase 2:** API REST (`https://pve:8006/api2/json`) para performance e escalabilidade
-
-## Problemas reais a resolver
-
-### 1. OverlayFS
-Docker precisa de `nesting=1`. Com Proxmox 8.x + ZFS 2.2, `overlay2` funciona nativamente.
-
-### 2. AppArmor
-Alguns cenários precisam de:
-```
-lxc.apparmor.profile: generated
-lxc.apparmor.allow_nesting: 1
-```
-Evitar `unconfined` - destrói garantias de segurança.
-
-### 3. FUSE
-Alguns containers precisam de `features: fuse=1`. Obsoleto com ZFS 2.2+.
-
-### 4. Storage Driver
-Forçar `overlay2` no `/etc/docker/daemon.json`:
-```json
-{ "storage-driver": "overlay2" }
-```
-Previne fallback para o desastroso `vfs`.
-
-## Features avançadas
-
-### Auto CTID
-Não precisar declarar - auto-incremento.
-
-### Auto IP
-DHCP + DNS automático.
-
-### Snapshots ZFS
-```bash
-zfs snapshot tank/services/immich@backup
-```
-
-### Backup via vzdump
-```bash
-vzdump <CTID>
-```
-
-### Upgrade de containers
-```bash
-pve-compose pull    # docker compose pull
-pve-compose up      # docker compose up -d (recria com novas imagens)
-```
-
-### Deploy multi-node (cluster Proxmox)
-```bash
-pve-compose deploy --node pve2
-```
-Mini orchestrator distribuído.
-
-### Rede automática
-```bash
-pve-compose network create
-```
-
-## O que já existe (e por que não resolve)
-
-### 1. Proxmox Helper Scripts (tteck)
-- Cria LXC com Docker pronto via script interativo
-- **Problema:** não é declarativo, não é GitOps, não gerencia lifecycle
-
-### 2. Proxmox-Automation
-- Scripts como `new-ct.sh --install-docker`
-- **Problema:** não orquestra compose, não resolve UID/GID
-
-### 3. Komodo / Dockge
-- Deploy de compose
-- **Problema:** não cria LXC automaticamente
-
-### 4. docker2lxc / umoci
-- Converte imagem Docker em template LXC
-- **Problema:** perde ENTRYPOINT, ENV, variáveis do `.env`, geralmente gera LXCs zumbis
-
-### O que falta no mercado
-
-Nenhuma solução faz:
-```
-docker-compose.yml -> cria LXC -> instala docker -> resolve permissões -> roda compose -> gerencia lifecycle
-```
-
-O `pve-compose` é essa solução.
-
-## Comparativo
-
-| Feature | Helper Scripts | docker2lxc | pve-compose |
-|---|---|---|---|
-| Cria LXC | ✅ | ❌ | ✅ |
-| Instala Docker | ✅ | ❌ | ✅ |
-| Declarativo (IaC) | ❌ | ❌ | ✅ |
-| Resolve UID/GID | ❌ | ❌ | ✅ |
-| Monta storage | ❌ | ❌ | ✅ |
-| Gerencia lifecycle | ❌ | ❌ | ✅ |
-| GitOps friendly | ❌ | ❌ | ✅ |
-| Multi-node | ❌ | ❌ | 🔜 |
-
-## Visão
-
-```
-pve-compose = Terraform + docker-compose + Proxmox
-```
-
-Orquestrador que une **IaaS** (Proxmox/LXC) com **PaaS** (Docker Compose) de forma transparente, declarativa e automatizada.
-
-## Licença
-
-MIT

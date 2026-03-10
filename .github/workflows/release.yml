@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y debhelper jq shellcheck
+
+      - name: Lint
+        run: make lint
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Building version: ${TAG}"
+
+      - name: Verify tag matches package version
+        run: |
+          PKG_VERSION=$(grep '^VERSION' Makefile | awk '{print $NF}')
+          TAG_VERSION="${{ steps.version.outputs.tag }}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag version (${TAG_VERSION}) does not match Makefile VERSION (${PKG_VERSION})"
+            exit 1
+          fi
+
+      - name: Build .deb package
+        run: make deb
+
+      - name: Rename .deb for release
+        run: |
+          cp pve-compose_${{ steps.version.outputs.tag }}-1_all.deb \
+             pve-compose_${{ steps.version.outputs.tag }}_all.deb
+          cp pve-compose_${{ steps.version.outputs.tag }}-1_all.deb \
+             pve-compose_all.deb
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ steps.version.outputs.tag }}"
+          generate_release_notes: true
+          make_latest: true
+          files: |
+            pve-compose_${{ steps.version.outputs.tag }}_all.deb
+            pve-compose_all.deb

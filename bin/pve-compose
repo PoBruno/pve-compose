@@ -3,7 +3,7 @@
 # Entry point: flag parsing + dynamic command dispatch
 set -eu
 
-PVC_VERSION="0.1.0"
+PVC_VERSION="1.1.0"
 
 # ── Resolve PVC_LIB (where lib/, commands/, scripts/ live) ──
 if [ -d "/usr/lib/pve-compose" ]; then

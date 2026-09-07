@@ -210,6 +210,17 @@ EOF
         _feat_keyctl="true"
     fi
 
+    # ── Validate numeric/bool input before it reaches jq ──
+    # The wizard accepts free text; without this, typing "2048MB" produced a
+    # raw "jq: invalid JSON text passed to --argjson" error.
+    config_require_uint "$_ctid"   "ctid"
+    config_require_uint "$_cores"  "cores"
+    config_require_uint "$_memory" "memory"
+    config_require_uint "$_swap"   "swap"
+    _privileged=$(config_require_bool "$_privileged" "privileged")
+    _disk_gb=$(config_normalize_disk "$_disk")
+    _disk="${_disk_gb}G"
+
     # ── Build tags JSON array ──
     _tags_json="[]"
     _old_ifs="$IFS"
@@ -223,41 +234,41 @@ EOF
     # ── Build lxc.json ──
     _config=$(jq -n \
         --arg hostname "$_hostname" \
-        --argjson ctid "$_ctid" \
+        --arg ctid "$_ctid" \
         --arg template "$_template" \
         --arg storage "$_storage" \
         --arg disk "$_disk" \
-        --argjson cores "$_cores" \
-        --argjson memory "$_memory" \
-        --argjson swap "$_swap" \
+        --arg cores "$_cores" \
+        --arg memory "$_memory" \
+        --arg swap "$_swap" \
         --arg ipv4 "$_ipv4" \
         --arg gateway "$_gateway" \
         --arg dns "$_dns" \
         --arg bridge "$_bridge" \
-        --argjson privileged "$_privileged" \
-        --argjson feat_nesting "$_feat_nesting" \
-        --argjson feat_keyctl "$_feat_keyctl" \
+        --arg privileged "$_privileged" \
+        --arg feat_nesting "$_feat_nesting" \
+        --arg feat_keyctl "$_feat_keyctl" \
         --argjson tags "$_tags_json" \
         --arg mount_source "$_mount_source" \
         --arg mount_target "$_mount_target" \
         '{
             hostname: $hostname,
-            ctid: $ctid,
+            ctid: ($ctid | tonumber),
             template: $template,
             storage: $storage,
             disk: $disk,
-            cores: $cores,
-            memory: $memory,
-            swap: $swap,
+            cores: ($cores | tonumber),
+            memory: ($memory | tonumber),
+            swap: ($swap | tonumber),
             ipv4: $ipv4,
             gateway: $gateway,
             dns: $dns,
             bridge: $bridge,
             tags: $tags,
-            privileged: $privileged,
+            privileged: ($privileged == "true"),
             features: {
-                nesting: $feat_nesting,
-                keyctl: $feat_keyctl
+                nesting: ($feat_nesting == "true"),
+                keyctl: ($feat_keyctl == "true")
             },
             mount: {
                 source: $mount_source,

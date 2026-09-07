@@ -29,11 +29,15 @@ lxc_is_running() {
 
 # lxc_wait_running CTID [TIMEOUT_S] - poll until container is running
 # Used after pct start to avoid race condition with lxc-attach
+#
+# BUGFIX: the old loop slept 0.1s but incremented the counter by 1, so a
+# "timeout" of 100 actually waited 10 seconds. Now counts in tenths.
 lxc_wait_running() {
     _wctid="$1"
     _timeout="${2:-10}"
+    _ticks=$(( _timeout * 10 ))   # 0.1s per tick
     _elapsed=0
-    while [ "$_elapsed" -lt "$_timeout" ]; do
+    while [ "$_elapsed" -lt "$_ticks" ]; do
         lxc_is_running "$_wctid" && return 0
         sleep 0.1
         _elapsed=$(( _elapsed + 1 ))
@@ -101,8 +105,16 @@ lxc_create() {
         *)   _tmpl_path="local:vztmpl/$_template" ;;   # bare filename
     esac
 
-    # Strip trailing G/g from disk size (pct expects number only)
+    # Strip trailing G/g from disk size (pct expects number only).
+    # config_normalize_disk already rejects bad units upstream; this is a
+    # last-resort guard in case lxc_create is called directly.
     _disk=$(printf '%s' "$_disk" | sed 's/[gG]$//')
+
+    # Re-check the CTID right before creating. detect_next_ctid may have run
+    # minutes earlier (slow interactive wizard) and the ID could be taken now.
+    if lxc_exists "$_ctid"; then
+        die "CTID $_ctid is already in use (container exists). Pick another ctid in lxc.json."
+    fi
 
     step "Creating container $_ctid ($_hostname)..."
 

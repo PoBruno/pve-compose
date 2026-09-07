@@ -85,11 +85,22 @@ cmd_up() {
     _tags=$(printf '%s' "$_resolved" | jq -r '.tags | join(";")')
 
     # Build features string
-    _features="nesting=1"
-    _feat_keyctl=$(printf '%s' "$_resolved" | jq -r '.features.keyctl')
-    if [ "$_feat_keyctl" = "true" ]; then
-        _features="nesting=1,keyctl=1"
+    # BUGFIX: this used to hardcode "nesting=1" and only look at keyctl, so
+    # setting {"nesting": false} in lxc.json had no effect. Now the whole
+    # features object is honoured and the result is order-normalized so that
+    # `apply` does not report a phantom diff on every run.
+    _feat_obj=$(printf '%s' "$_resolved" | jq -c '.features // empty')
+    if [ -n "$_feat_obj" ]; then
+        _features=$(config_features_to_string "$_feat_obj")
+    else
+        _features="nesting=1"
     fi
+    # Docker needs nesting; warn loudly instead of silently producing a broken CT
+    case "$_features" in
+        *nesting=1*) ;;
+        *) warn "features.nesting is disabled - Docker will not run inside this container" ;;
+    esac
+    [ -n "$_features" ] || _features="nesting=1"
 
     # If lxc.json didn't exist, generate a complete one (preserving tag templates)
     if [ ! -f "$PVC_LXC_JSON" ]; then

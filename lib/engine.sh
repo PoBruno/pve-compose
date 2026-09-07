@@ -77,6 +77,18 @@ engine_resolve() {
     _ipv4=$(config_get_field "ipv4" "dhcp")
     _bridge=$(config_get_field "bridge" "")
 
+    # ── Validate before they reach jq ──
+    # Previously these were passed straight to `jq --argjson`, which failed
+    # with a raw "invalid JSON text" if the user typed e.g. "2048MB".
+    config_require_uint "$_ctid"   "ctid"
+    config_require_uint "$_cores"  "cores"
+    config_require_uint "$_memory" "memory"
+    config_require_uint "$_swap"   "swap"
+    _privileged=$(config_require_bool "$_privileged" "privileged")
+    # normalize disk early so a bad value fails here, not inside pct
+    _disk_gb=$(config_normalize_disk "$_disk")
+    _disk="${_disk_gb}G"
+
     # ── gateway ──
     _gateway=$(config_get_field "gateway" "")
     if [ -z "$_gateway" ] || [ "$_gateway" = "auto" ]; then
@@ -122,39 +134,39 @@ engine_resolve() {
     # ── Generate resolved JSON (without tags - need it for tags_expand) ──
     _resolved_json=$(jq -n \
         --arg hostname "$_hostname" \
-        --argjson ctid "$_ctid" \
+        --arg ctid "$_ctid" \
         --arg template "$_template" \
         --arg storage "$_storage" \
         --arg disk "$_disk" \
-        --argjson cores "$_cores" \
-        --argjson memory "$_memory" \
-        --argjson swap "$_swap" \
+        --arg cores "$_cores" \
+        --arg memory "$_memory" \
+        --arg swap "$_swap" \
         --arg ipv4 "$_ipv4" \
         --arg gateway "$_gateway" \
         --arg dns "$_dns" \
         --arg bridge "$_bridge" \
-        --argjson privileged "$_privileged" \
-        --argjson feat_nesting "$_feat_nesting" \
-        --argjson feat_keyctl "$_feat_keyctl" \
+        --arg privileged "$_privileged" \
+        --arg feat_nesting "$_feat_nesting" \
+        --arg feat_keyctl "$_feat_keyctl" \
         --arg mount_source "$_mount_source" \
         --arg mount_target "$_mount_target" \
         '{
             hostname: $hostname,
-            ctid: $ctid,
+            ctid: ($ctid | tonumber),
             template: $template,
             storage: $storage,
             disk: $disk,
-            cores: $cores,
-            memory: $memory,
-            swap: $swap,
+            cores: ($cores | tonumber),
+            memory: ($memory | tonumber),
+            swap: ($swap | tonumber),
             ipv4: $ipv4,
             gateway: $gateway,
             dns: $dns,
             bridge: $bridge,
-            privileged: $privileged,
+            privileged: ($privileged == "true"),
             features: {
-                nesting: $feat_nesting,
-                keyctl: $feat_keyctl
+                nesting: ($feat_nesting == "true"),
+                keyctl: ($feat_keyctl == "true")
             },
             mount: {
                 source: $mount_source,

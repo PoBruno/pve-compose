@@ -7,6 +7,14 @@ cmd_apply() {
     . "$PVC_LIB/lib/tags.sh"
     . "$PVC_LIB/lib/mount.sh"
 
+    _yes=0
+    for _arg in "$@"; do
+        case "$_arg" in
+            --yes|-y) _yes=1 ;;
+            *) die "Unknown option for apply: $_arg" ;;
+        esac
+    done
+
     config_require_jq
     config_load_lxc_json || die "No lxc.json found"
     config_load_global || true
@@ -28,6 +36,8 @@ cmd_apply() {
     _want_gateway=$(printf '%s' "$_lxc_json" | jq -r '.gateway // empty')
     _want_dns=$(printf '%s' "$_lxc_json" | jq -r '.dns // empty')
     _want_bridge=$(printf '%s' "$_lxc_json" | jq -r '.bridge // empty')
+    # vlan: absent = leave the current tag alone, 0 = untagged, 1-4094 = tag
+    _want_vlan=$(printf '%s' "$_lxc_json" | jq -r 'if has("vlan") and .vlan != null then .vlan else empty end')
     _want_disk=$(printf '%s' "$_lxc_json" | jq -r '.disk // empty')
     _want_storage=$(printf '%s' "$_lxc_json" | jq -r '.storage // empty')
     _want_template=$(printf '%s' "$_lxc_json" | jq -r '.template // empty')
@@ -38,6 +48,7 @@ cmd_apply() {
     [ -n "$_want_cores" ]  && config_require_uint "$_want_cores"  "cores"
     [ -n "$_want_memory" ] && config_require_uint "$_want_memory" "memory"
     [ -n "$_want_swap" ]   && config_require_uint "$_want_swap"   "swap"
+    [ -n "$_want_vlan" ]   && config_require_vlan "$_want_vlan"
 
     # Features: honour the `features` field if present, otherwise derive from
     # `privileged`. Always normalized (sorted) so comparison is stable.
@@ -86,7 +97,7 @@ cmd_apply() {
 
     # Parse net0 (composite)
     _net0_line=$(sed -n 's/^net0: *//p' "$_conf")
-    _cur_ip="" _cur_gw="" _cur_bridge=""
+    _cur_ip="" _cur_gw="" _cur_bridge="" _cur_tag=""
     if [ -n "$_net0_line" ]; then
         _old_ifs="$IFS"; IFS=","
         for _kv in $_net0_line; do
@@ -94,6 +105,7 @@ cmd_apply() {
                 ip=*)     _cur_ip="${_kv#ip=}" ;;
                 gw=*)     _cur_gw="${_kv#gw=}" ;;
                 bridge=*) _cur_bridge="${_kv#bridge=}" ;;
+                tag=*)    _cur_tag="${_kv#tag=}" ;;
             esac
         done
         IFS="$_old_ifs"
@@ -187,19 +199,28 @@ cmd_apply() {
     [ -n "$_want_ipv4" ] && [ "$_want_ipv4" != "$_cur_ip" ] && _net_changed=1
     [ -n "$_want_gateway" ] && [ "$_want_gateway" != "$_cur_gw" ] && _net_changed=1
     [ -n "$_want_bridge" ] && [ "$_want_bridge" != "$_cur_bridge" ] && _net_changed=1
+    _vlan_desc=""
+    if [ -n "$_want_vlan" ]; then
+        _want_tag="$_want_vlan"
+        [ "$_want_tag" = "0" ] && _want_tag=""
+        if [ "$_want_tag" != "$_cur_tag" ]; then
+            _net_changed=1
+            _vlan_desc=" vlan: ${_cur_tag:-untagged} → ${_want_tag:-untagged};"
+        fi
+    fi
 
     if [ "$_net_changed" = "1" ]; then
-        _new_net0="name=eth0,bridge=${_want_bridge:-$_cur_bridge}"
         _nip="${_want_ipv4:-$_cur_ip}"
-        if [ "$_nip" = "dhcp" ]; then
-            _new_net0="$_new_net0,ip=dhcp"
-        else
-            _new_net0="$_new_net0,ip=$_nip"
-            _ngw="${_want_gateway:-$_cur_gw}"
-            [ -n "$_ngw" ] && _new_net0="$_new_net0,gw=$_ngw"
-        fi
+        _new_net0=$(lxc_merge_net0 "$_net0_line" "${_want_bridge:-$_cur_bridge}" \
+            "$_nip" "${_want_gateway:-$_cur_gw}" "$_want_vlan")
         _restart_args="$_restart_args --net0 $_new_net0"
-        _restart_desc="$_restart_desc net0: $_cur_ip → $_nip;"
+        if [ "$_nip" != "$_cur_ip" ]; then
+            _restart_desc="$_restart_desc net0: $_cur_ip → $_nip;$_vlan_desc"
+        elif [ -n "$_vlan_desc" ]; then
+            _restart_desc="$_restart_desc$_vlan_desc"
+        else
+            _restart_desc="$_restart_desc net0: bridge/gateway;"
+        fi
     fi
 
     # ── No changes? ──
@@ -235,8 +256,10 @@ cmd_apply() {
     # ── Apply restart-required fields ──
     if [ -n "$_restart_args" ]; then
         warn "These changes require restart:$_restart_desc"
+        _was_running=0
         if lxc_is_running "$_ctid"; then
-            confirm "Restart container $_ctid now?" || {
+            _was_running=1
+            [ "$_yes" = "1" ] || confirm "Restart container $_ctid now?" || {
                 if [ "$_applied" = "1" ]; then
                     msg "Hot-apply changes applied. Restart pending for:$_restart_desc"
                 else
@@ -249,9 +272,12 @@ cmd_apply() {
         fi
         # shellcheck disable=SC2086
         _pct_run set "$_ctid" $_restart_args
-        step "Starting container $_ctid..."
-        _pct_run start "$_ctid"
-        lxc_wait_running "$_ctid" 100 || warn "Container may not be fully ready"
+        # A container that was stopped stays stopped (e.g. after `down`)
+        if [ "$_was_running" = "1" ]; then
+            step "Starting container $_ctid..."
+            _pct_run start "$_ctid"
+            lxc_wait_running "$_ctid" 100 || warn "Container may not be fully ready"
+        fi
         _applied=1
     fi
 

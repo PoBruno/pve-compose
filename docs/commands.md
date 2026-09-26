@@ -88,12 +88,45 @@ All flags after `up` are forwarded to `docker compose up`.
 
 ### `pve-compose down`
 
-Stop and remove Docker Compose services (containers, networks). The LXC container remains.
+Run `docker compose down` inside the LXC, then shut the container down. One LXC is one stack, so with the stack down the container would only hold RAM. The next `up` starts it again through the fast path.
 
 ```bash
-pve-compose down
-pve-compose down -v        # also remove volumes
+pve-compose down                  # compose down + graceful shutdown (pct shutdown, forced after 60s)
+pve-compose down -v               # flags go to docker compose first
+pve-compose down --keep-running   # only compose down, leave the LXC on (debugging)
 ```
+
+If the container is already stopped, `down` does nothing.
+
+### `pve-compose adopt`
+
+Bring an existing LXC container under pve-compose management. Reads `/etc/pve/lxc/<ctid>.conf` and writes a matching `lxc.json`, after which every command works on it.
+
+```bash
+cd /data/app/immich
+pve-compose adopt                  # detect the container by its bind mount
+pve-compose adopt 201              # or name it
+pve-compose adopt 201 --force      # overwrite an existing lxc.json
+pve-compose --dry-run adopt        # print the lxc.json, write nothing
+```
+
+Detection:
+
+1. The container whose `mpN` source is the current directory (trailing slashes ignored, any mount slot).
+2. Otherwise a container whose hostname equals the directory name.
+3. Several matches: stops and asks for the CTID.
+
+What gets written:
+
+- The real `hostname`, even when it differs from the directory name. `lxc.json` wins over `basename $PWD` from now on.
+- `storage`/`disk` from `rootfs`, `ipv4`/`gateway`/`bridge`/`vlan` from `net0`, `dns` from `nameserver`, `features`, and `privileged` (inverted from `unprivileged`).
+- `mount` is the mount that points at the directory, kept exactly as written in the conf, so `apply` sees no change.
+- Tags are kept; the container IP becomes the `{ipv4}` template again.
+- `template` comes from the global config: the original one is not recorded by Proxmox.
+
+Extra mounts (`mp1`, `mp2`, ...) and raw `lxc.*` lines are left untouched. Right after adopting, `pve-compose apply` reports no changes.
+
+`plan` and `up` refuse to generate a new `lxc.json` in a directory that an existing container already mounts, and point to `adopt` instead. That avoids creating a second container on top of the same data.
 
 ### `pve-compose destroy`
 
@@ -165,11 +198,17 @@ nano lxc.json
 pve-compose apply
 ```
 
-**Hot-apply** (no restart needed): `memory`, `swap`, `cores`, `cpulimit`, `tags`, `dns`, `description`
+**Hot-apply** (no restart needed): `memory`, `swap`, `cores`, `tags`, `dns`, `disk` (grow only), `mount`
 
-**Restart required**: `hostname`, `features`, `net0` (IP, bridge, gateway)
+**Restart required**: `hostname`, `features`, `net0` (IP, bridge, gateway, VLAN)
 
-If restart-required changes are detected, `apply` asks for confirmation before restarting.
+Network changes update `net0` in place: the MAC address, `firewall=1` and any other option are kept. A missing `vlan` field leaves the current tag alone, `"vlan": 0` removes it.
+
+If restart-required changes are detected on a running container, `apply` asks before restarting. Use `--yes` when there is no terminal. A stopped container is updated and stays stopped.
+
+```bash
+pve-compose apply --yes
+```
 
 ### `pve-compose shell`
 
@@ -207,7 +246,6 @@ These commands are forwarded directly to `docker compose` inside the LXC contain
 | `config` | Validate and view the compose file |
 | `cp` | Copy files between container and host |
 | `create` | Create containers without starting |
-| `down` | Stop and remove containers, networks |
 | `events` | Receive real-time container events |
 | `exec` | Execute a command in a running container |
 | `export` | Export container filesystem as tar |

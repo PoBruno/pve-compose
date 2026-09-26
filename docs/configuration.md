@@ -22,6 +22,7 @@ Located in each project directory alongside `docker-compose.yml`. Auto-generated
   "gateway": "192.168.1.1",
   "dns": "1.1.1.1",
   "bridge": "vmbr0",
+  "vlan": 20,
   "privileged": true,
   "tags": ["{ipv4}", "pve-compose"],
   "features": {
@@ -39,7 +40,7 @@ Located in each project directory alongside `docker-compose.yml`. Auto-generated
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `hostname` | string | directory name | LXC hostname. Derived from `basename $PWD` |
+| `hostname` | string | directory name | LXC hostname. `basename $PWD` unless set in `lxc.json` |
 | `ctid` | integer | next available | Container ID. Auto-detected via Proxmox API |
 | `template` | int/string | auto | Template CTID (e.g., `9000`) or OS tarball filename |
 | `storage` | string | auto | Storage pool for rootfs. Auto-detected (zfspool > lvmthin > dir) |
@@ -51,6 +52,7 @@ Located in each project directory alongside `docker-compose.yml`. Auto-generated
 | `gateway` | string | auto | Default gateway. Auto-detected from host |
 | `dns` | string | auto | DNS server. Auto-detected from host (skips localhost) |
 | `bridge` | string | `"vmbr0"` | Network bridge |
+| `vlan` | integer | none | 802.1q VLAN tag (1-4094). `0` removes the tag. See [VLANs](#vlans) |
 | `privileged` | boolean | `true` | Privileged container. Simplifies Docker setup |
 | `tags` | array | `["{ipv4}", "pve-compose"]` | Proxmox tags. Supports `{var}` templates |
 | `features` | object | derived | LXC features. Derived from `privileged` field |
@@ -70,6 +72,25 @@ For example, `storage`:
 2. Else if `pve-compose.json` has `"defaults.storage": "local-zfs"` -> use that
 3. Else auto-detect from host (priority: zfspool > lvmthin > lvm > dir)
 4. Else fallback to `"local"`
+
+### VLANs
+
+Set `vlan` to put the container on a tagged VLAN. It becomes `tag=N` on `net0`:
+
+```json
+{
+  "ipv4": "10.20.0.50/24",
+  "gateway": "10.20.0.1",
+  "bridge": "vmbr0",
+  "vlan": 20
+}
+```
+
+- Valid IDs are 1 to 4094. Anything else fails with a clear message before touching the container.
+- `apply` adds, changes or removes the tag (restart required). A missing `vlan` leaves whatever tag the container has; `"vlan": 0` removes it.
+- A default can live in the global config (`defaults.vlan`).
+- The bridge does not have to be VLAN aware. With `bridge-vlan-aware yes` the tag is handled on the bridge itself; without it Proxmox builds a `vmbr0v20` bridge on the bridge port. `plan` tells you which case applies.
+- The physical switch port has to carry the VLAN tagged, and `ipv4`/`gateway` have to belong to that VLAN's subnet. A wrong tag leaves the container without network, so `up` will fail to pull images.
 
 ### Tag templates
 

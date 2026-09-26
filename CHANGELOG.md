@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.1.1] - 2026-09-26
+
+Bug-fix release: several `lxc.json` fields were silently ignored.
+
+### Fixed
+
+- **`up`: requested disk size ignored on clone** - containers cloned from a template kept the
+  template's rootfs size (e.g. 2G) because `pct clone` has no size option. The rootfs is now
+  grown to `disk` right after cloning (grow only; a smaller value only warns).
+- **`apply` ignored `disk`, `mount`, `storage` and `template`** while printing "Changes applied".
+  It now grows the rootfs online, configures the bind mount, and warns on storage/template
+  changes (which need a manual `pct move-volume` / recreate).
+- **Disk units**: `"512M"` no longer becomes 512 GB; non-whole-GB sizes are rejected with a
+  clear message.
+- **Readable validation**: `ctid`, `cores`, `memory`, `swap` and `privileged` are validated
+  instead of failing with a raw `jq --argjson` parse error (e.g. `"2048MB"`).
+- **`"swap": 0`** is preserved instead of falling back to the 512 default.
+- **`features`**: the whole object is honoured (`nesting: false` was ignored) and keys are
+  order-normalized, so `apply` no longer reports a phantom diff.
+- **Mount slots**: a free `mpN` slot is used instead of always overwriting `mp0`.
+- **`lxc_wait_running`** counted 0.1s sleeps as 1s (timeout 100 waited 10s).
+- **CTID race**: the CTID is re-checked right before `pct create`.
+
+## [1.1.0] - 2026-03-10
+
+### Changed
+
+- Maintainer and copyright set to Bruno Poleza Gomes across packaging and docs.
+- `.deb` now suggests `bash-completion` (required for tab completion to load).
+
 ## [0.1.0] - 2026-03-10
 
 First public release.

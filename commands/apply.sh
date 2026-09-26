@@ -5,6 +5,7 @@ cmd_apply() {
     . "$PVC_LIB/lib/config.sh"
     . "$PVC_LIB/lib/lxc.sh"
     . "$PVC_LIB/lib/tags.sh"
+    . "$PVC_LIB/lib/mount.sh"
 
     config_require_jq
     config_load_lxc_json || die "No lxc.json found"
@@ -22,16 +23,36 @@ cmd_apply() {
     [ -z "$_want_hostname" ] && _want_hostname=$(basename "$(pwd)")
     _want_cores=$(printf '%s' "$_lxc_json" | jq -r '.cores // empty')
     _want_memory=$(printf '%s' "$_lxc_json" | jq -r '.memory // empty')
-    _want_swap=$(printf '%s' "$_lxc_json" | jq -r '.swap // empty')
+    _want_swap=$(config_get_field "swap" "")
     _want_ipv4=$(printf '%s' "$_lxc_json" | jq -r '.ipv4 // empty')
     _want_gateway=$(printf '%s' "$_lxc_json" | jq -r '.gateway // empty')
     _want_dns=$(printf '%s' "$_lxc_json" | jq -r '.dns // empty')
     _want_bridge=$(printf '%s' "$_lxc_json" | jq -r '.bridge // empty')
+    _want_disk=$(printf '%s' "$_lxc_json" | jq -r '.disk // empty')
+    _want_storage=$(printf '%s' "$_lxc_json" | jq -r '.storage // empty')
+    _want_template=$(printf '%s' "$_lxc_json" | jq -r '.template // empty')
+    _want_mnt_src=$(printf '%s' "$_lxc_json" | jq -r '.mount.source // empty')
+    _want_mnt_tgt=$(printf '%s' "$_lxc_json" | jq -r '.mount.target // empty')
 
-    # Features string
-    _want_features="nesting=1"
-    _priv=$(printf '%s' "$_lxc_json" | jq -r '.privileged // "true"')
-    [ "$_priv" = "false" ] && _want_features="nesting=1,keyctl=1"
+    # Validate numeric fields up front with a readable error
+    [ -n "$_want_cores" ]  && config_require_uint "$_want_cores"  "cores"
+    [ -n "$_want_memory" ] && config_require_uint "$_want_memory" "memory"
+    [ -n "$_want_swap" ]   && config_require_uint "$_want_swap"   "swap"
+
+    # Features: honour the `features` field if present, otherwise derive from
+    # `privileged`. Always normalized (sorted) so comparison is stable.
+    _feat_json=$(printf '%s' "$_lxc_json" | jq -c '.features // empty' 2>/dev/null)
+    if [ -n "$_feat_json" ]; then
+        _want_features=$(config_features_to_string "$_feat_json")
+    else
+        _priv=$(printf '%s' "$_lxc_json" | jq -r '.privileged // "true"')
+        if [ "$_priv" = "false" ]; then
+            _want_features="keyctl=1,nesting=1"
+        else
+            _want_features="nesting=1"
+        fi
+    fi
+    _want_features=$(config_features_normalize "$_want_features")
 
     # Tags - expand templates
     _tags_raw=""
@@ -55,8 +76,13 @@ cmd_apply() {
     _cur_memory=$(sed -n 's/^memory: *//p' "$_conf")
     _cur_swap=$(sed -n 's/^swap: *//p' "$_conf")
     _cur_dns=$(sed -n 's/^nameserver: *//p' "$_conf")
-    _cur_features=$(sed -n 's/^features: *//p' "$_conf")
+    _cur_features=$(config_features_normalize "$(sed -n 's/^features: *//p' "$_conf")")
     _cur_tags=$(sed -n 's/^tags: *//p' "$_conf")
+
+    # rootfs line: "rootfs: local-zfs:subvol-101-disk-0,size=8G"
+    _rootfs_line=$(sed -n 's/^rootfs: *//p' "$_conf")
+    _cur_storage=$(printf '%s' "$_rootfs_line" | sed -n 's/^\([^:]*\):.*/\1/p')
+    _cur_disk=$(printf '%s' "$_rootfs_line" | sed -n 's/.*size=\([0-9]*\)[gG].*/\1/p')
 
     # Parse net0 (composite)
     _net0_line=$(sed -n 's/^net0: *//p' "$_conf")
@@ -71,6 +97,56 @@ cmd_apply() {
             esac
         done
         IFS="$_old_ifs"
+    fi
+
+    # ── Immutable fields: warn instead of silently ignoring ──
+    # storage and template cannot change on an existing container.
+    if [ -n "$_want_storage" ] && [ -n "$_cur_storage" ] && [ "$_want_storage" != "$_cur_storage" ]; then
+        warn "storage: '$_cur_storage' -> '$_want_storage' cannot be changed on an existing container."
+        warn "  To move it: pct stop $_ctid && pct move-volume $_ctid rootfs $_want_storage"
+    fi
+    if [ -n "$_want_template" ]; then
+        _tmpl_marker="$PVC_STATE_DIR/template"
+        if [ -f "$_tmpl_marker" ]; then
+            _cur_template=$(cat "$_tmpl_marker" 2>/dev/null)
+            if [ -n "$_cur_template" ] && [ "$_cur_template" != "$_want_template" ]; then
+                warn "template: '$_cur_template' -> '$_want_template' only applies when recreating the container."
+            fi
+        fi
+    fi
+
+    # ── Disk resize (BUGFIX: was silently ignored) ──
+    # ZFS/LVM can only grow a rootfs. Shrinking must fail loudly.
+    _disk_grow=""
+    if [ -n "$_want_disk" ]; then
+        _want_disk_gb=$(config_normalize_disk "$_want_disk")
+        if [ -n "$_cur_disk" ] && [ "$_want_disk_gb" != "$_cur_disk" ]; then
+            if [ "$_want_disk_gb" -lt "$_cur_disk" ]; then
+                warn "disk: ${_cur_disk}G -> ${_want_disk_gb}G is a SHRINK and cannot be done online."
+                warn "  Proxmox does not support shrinking rootfs. Restore from backup into a smaller CT instead."
+            else
+                _disk_grow="$_want_disk_gb"
+            fi
+        fi
+    fi
+
+    # ── Bind mount (BUGFIX: was silently ignored) ──
+    _mnt_changed=0
+    if [ -n "$_want_mnt_src" ] || [ -n "$_want_mnt_tgt" ]; then
+        _msrc="${_want_mnt_src:-$(pwd)}"
+        _mtgt="${_want_mnt_tgt:-/data}"
+        # find whether this source is already mounted, and where
+        _cur_mp_line=$(grep -F ": ${_msrc}," "$_conf" 2>/dev/null | grep '^mp[0-9]' | head -1)
+        if [ -z "$_cur_mp_line" ]; then
+            _mnt_changed=1
+            _mnt_desc=" mount: (none) -> $_msrc => $_mtgt;"
+        else
+            _cur_mtgt=$(printf '%s' "$_cur_mp_line" | sed -n 's/.*mp=\([^,]*\).*/\1/p')
+            if [ "$_cur_mtgt" != "$_mtgt" ]; then
+                _mnt_changed=1
+                _mnt_desc=" mount target: $_cur_mtgt -> $_mtgt;"
+            fi
+        fi
     fi
 
     # ── Calculate diff ──
@@ -127,7 +203,7 @@ cmd_apply() {
     fi
 
     # ── No changes? ──
-    if [ -z "$_hot_args" ] && [ -z "$_restart_args" ]; then
+    if [ -z "$_hot_args" ] && [ -z "$_restart_args" ] && [ -z "$_disk_grow" ] && [ "$_mnt_changed" != "1" ]; then
         info "No changes to apply."
         return 0
     fi
@@ -138,6 +214,21 @@ cmd_apply() {
         info "Hot-apply changes:$_hot_desc"
         # shellcheck disable=SC2086
         _pct_run set "$_ctid" $_hot_args
+        _applied=1
+    fi
+
+    # ── Grow rootfs (online, no restart needed on ZFS/LVM-thin) ──
+    if [ -n "$_disk_grow" ]; then
+        _delta=$(( _disk_grow - _cur_disk ))
+        info "Resizing rootfs: ${_cur_disk}G -> ${_disk_grow}G (+${_delta}G)"
+        _pct_run resize "$_ctid" rootfs "+${_delta}G"
+        _applied=1
+    fi
+
+    # ── Apply bind mount ──
+    if [ "$_mnt_changed" = "1" ]; then
+        info "Applying mount:$_mnt_desc"
+        mount_configure "$_ctid" "$_msrc" "$_mtgt"
         _applied=1
     fi
 

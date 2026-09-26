@@ -60,6 +60,8 @@ cmd_up() {
             [ -f "$_cf" ] && _compose_found=1 && break
         done
         [ "$_compose_found" = "1" ] || die "No lxc.json or docker-compose.yml found in $PWD"
+        . "$PVC_LIB/lib/resolve.sh"
+        resolve_guard_existing
         info "No lxc.json found, generating from defaults..."
     fi
 
@@ -83,6 +85,7 @@ cmd_up() {
     _mount_source=$(printf '%s' "$_resolved" | jq -r '.mount.source')
     _mount_target=$(printf '%s' "$_resolved" | jq -r '.mount.target')
     _tags=$(printf '%s' "$_resolved" | jq -r '.tags | join(";")')
+    _vlan=$(printf '%s' "$_resolved" | jq -r '.vlan // empty')
 
     # Build features string
     # BUGFIX: this used to hardcode "nesting=1" and only look at keyctl, so
@@ -132,15 +135,7 @@ cmd_up() {
             lxc_clone "$_template" "$_ctid" "$_storage"
 
             # Reconfigure cloned CT with our settings
-            _net0="name=eth0,bridge=$_bridge"
-            if [ "$_ipv4" = "dhcp" ]; then
-                _net0="$_net0,ip=dhcp"
-            else
-                _net0="$_net0,ip=$_ipv4"
-                if [ -n "$_gateway" ]; then
-                    _net0="$_net0,gw=$_gateway"
-                fi
-            fi
+            _net0=$(lxc_build_net0 "$_bridge" "$_ipv4" "$_gateway" "$_vlan")
             step "Configuring cloned container $_ctid..."
             _pct_run set "$_ctid" \
                 --hostname "$_hostname" \
@@ -158,7 +153,7 @@ cmd_up() {
             # Create from OS template tarball (slow ~3min)
             lxc_create "$_ctid" "$_template" "$_storage" "$_disk" \
                 "$_hostname" "$_cores" "$_memory" "$_swap" "$_bridge" \
-                "$_ipv4" "$_gateway" "$_dns" "$_privileged" "$_features" "$_tags"
+                "$_ipv4" "$_gateway" "$_dns" "$_privileged" "$_features" "$_tags" "$_vlan"
         fi
 
         # ── Configure mount ──

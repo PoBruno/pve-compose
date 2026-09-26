@@ -1,252 +1,128 @@
 # pve-compose
 
-**One Compose stack per LXC. Fully automated. Backed up by your storage.**
+**One Docker Compose stack per LXC on Proxmox. The folder is the stack, the storage is the backup.**
 
-If you manage Docker Compose stacks manually and want each one isolated in its own LXC container, with its own resources, its own restart, its own backup, pve-compose does it all for you. Write a `docker-compose.yml`, run `pve-compose up -d`, done.
+## Why
 
-## How It Works
+I run my homelab on a single Proxmox box. Every app lives in its own folder on a ZFS pool
+(`/data/app/immich`, `/data/app/n8n`, ...), with its `docker-compose.yml` and all of its data
+next to it. Each app gets its own LXC, so it has its own IP, RAM limit and restart, and one
+broken stack never takes the others down. Backup is just cloning the disk: every compose file,
+config and database is in there.
 
-Your current directory **is** the project. pve-compose uses `$PWD` as the source of truth:
-
-```mermaid
-graph LR
-    A["<b>Proxmox Host</b><br/>ZFS / Storage"] --> B
-
-    subgraph B["Your Storage"]
-        direction TB
-        D1["<b>📁 /data/app/traefik &nbsp;&nbsp;&nbsp;</b><br/>📄 docker-compose.yml<br/>📄 lxc.json &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp<br/>📂 config/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"]
-        
-        D2["<b>📁 /data/app/nextcloud </b><br/>📄 docker-compose.yml<br/>📄 lxc.json &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 data/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 config/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"]
-        
-        D3["<b>📁 /data/app/monitoring</b><br/>📄 docker-compose.yml &nbsp;<br/>📄 lxc.json &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 grafana/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>📂 prometheus/ &nbsp;&nbsp;&nbsp;&nbsp;"]
-    end
-
-    D1 -->|"bind mount"| C1["🐳 LXC 100<br/>traefik"]
-    D2 -->|"bind mount"| C2["🐳 LXC 101<br/>nextcloud"]
-    D3 -->|"bind mount"| C3["🐳 LXC 102<br/>monitoring"]
-```
-
-Each folder contains the `docker-compose.yml` **and** its persistent data (volumes, configs). pve-compose creates an LXC, mounts that folder inside it at `/data`, installs Docker, and runs `docker compose up -d`.
-
-### The key insight: your storage _is_ the backup
-
-When you keep compose volumes as local directories (not Docker-managed volumes), everything lives in one place, your storage. With ZFS, Ceph, or any Proxmox-managed storage:
-
-- **ZFS snapshots** = instant point-in-time backup of all services
-- **ZFS replication** = offsite copy, automated
-- **Disk mirroring** (mirror/raidz) = redundancy built in
-- **No backup jobs needed** - no `vzdump`, no Docker volume exports, no cron scripts
-
-The whole `/data/app/` tree - every compose file, every config, every database file, is protected at the storage level. Clone the disk, replicate it, snapshot it. That's your backup plan.
-
-> **This is Infrastructure as Code by convention.** Each folder is a self-contained, portable service definition. Copy the folder to another Proxmox host, run `pve-compose up -d`, same stack.
-
-## Features
-
-- **Zero-config** - drop a `docker-compose.yml` in a folder, run `pve-compose up -d`
-- **`$PWD` is the context** - always run pve-compose from the folder with your `docker-compose.yml`
-- **Template cloning** - create a Docker-ready template once, clone in ~10 seconds
-- **Fast path** - subsequent `up` on running containers completes in < 0.5s
-- **Full compose pass-through** - `logs`, `exec`, `ps`, `pull`, `restart`, and 25+ more
-- **Health checks** - `pve-compose doctor` validates Docker, DNS, mount, compose
-- **Hot-apply** - `pve-compose apply` changes memory, CPU, tags without restart
-- **Interactive wizard** - TUI menus for setup and template creation
-- **Pure POSIX shell** - `sh` + `jq`. Runs on any Proxmox host out of the box
-- **Bash completion** - tab-complete commands, flags, and service names
-
-## Requirements
-
-- Proxmox VE 7.x or 8.x
-- `jq` (`apt install jq`)
-
-## Quick Start
+Doing that by hand meant the same routine for every app: create the CT, enable nesting, bind
+mount the folder, install Docker, `pct exec` into it to run compose, and remember which CTID
+belongs to which folder. pve-compose turns all of that into one command, run from the folder:
 
 ```bash
-# 1. Install
+cd /data/app/immich
+pve-compose up -d
+```
+
+## How it works
+
+```
+/data/app/immich/            host storage (ZFS, LVM, anything Proxmox manages)
+├── docker-compose.yml       volumes as ./relative paths, so the data stays here
+├── lxc.json                 the container: CTID, IP, RAM, disk (generated, editable)
+└── library/  postgres/      app data
+        │
+        │ bind mount -> /data
+        ▼
+LXC 200 "immich"  ->  docker compose up -d
+```
+
+- `$PWD` is the context. Every command works on the stack of the folder you are in.
+- The LXC is disposable. Destroy it, run `up` again, same app with the same data.
+- Copy the folder to another Proxmox host and `up` it there: same stack.
+- Plain POSIX `sh` + `jq`, nothing else to install.
+
+## Install
+
+```bash
 curl -sL https://github.com/PoBruno/pve-compose/releases/latest/download/pve-compose_all.deb \
   -o /tmp/pve-compose.deb && dpkg -i /tmp/pve-compose.deb
 
-# 2. Initialize (auto-detects your Proxmox environment)
-pve-compose setup
+pve-compose setup              # detects storage, bridge, gateway, DNS
+pve-compose template create    # optional: Docker-ready template, new CTs clone in ~10s
+```
 
-# 3. Create a Docker-ready template (optional, but recommended)
-pve-compose template create
+Proxmox VE 7 or newer (tested on 9.1) and `jq`. From source: `make install`.
 
-# 4. Deploy a service
+## Use
+
+```bash
 mkdir -p /data/app/speedtest && cd /data/app/speedtest
-
 cat > docker-compose.yml <<'EOF'
 services:
   speedtest:
     image: lscr.io/linuxserver/speedtest-tracker:latest
-    ports:
-      - "8080:80"
+    ports: ["8080:80"]
+    volumes: ["./config:/config"]
 EOF
 
-pve-compose up -d
-
-# 5. Check it
-pve-compose status
-pve-compose doctor
+pve-compose up -d        # creates the LXC, mounts the folder, installs Docker, compose up
 pve-compose logs -f
 ```
 
-That's it. An LXC container was created, Docker was installed, your directory was bind-mounted, and the compose stack is running.
+Want a fixed IP or more RAM? `pve-compose plan` writes `lxc.json`, edit it, then `up`
+(new container) or `apply` (existing one).
 
-## Install
+Already have containers you set up by hand? `cd` into the folder they mount and run
+`pve-compose adopt`. It reads the container config and writes `lxc.json`, without touching
+the container.
 
-**From .deb package** (recommended):
+## Commands
 
-```bash
-dpkg -i pve-compose_0.1.0-1_all.deb
-```
-
-**From source**:
-
-```bash
-git clone https://github.com/PoBruno/pve-compose.git
-cd pve-compose
-make install
-```
-
-**Uninstall**:
-
-```bash
-dpkg -r pve-compose
-# or: make uninstall
-```
-
-## Usage
-
-### Core Commands
-
-| Command | Description |
+| Command | What it does |
 |---|---|
-| `pve-compose setup` | Configure global defaults (interactive wizard) |
-| `pve-compose template create` | Build a Docker-ready LXC template (~2 min) |
-| `pve-compose plan` | Preview resolved config, generate `lxc.json` |
-| `pve-compose up -d` | Create LXC + install Docker + start compose |
-| `pve-compose down` | Compose down + shut the LXC down (`--keep-running` to keep it on) |
-| `pve-compose status` | Show container and service status |
-| `pve-compose doctor` | Run 10 health checks on the project |
-| `pve-compose apply` | Apply `lxc.json` changes to existing container |
-| `pve-compose destroy` | Tear down compose + stop + destroy LXC |
-| `pve-compose adopt` | Generate `lxc.json` from an LXC you already have |
-| `pve-compose shell` | Open a shell inside the LXC |
-| `pve-compose overview` | List Docker containers across all LXCs |
+| `up -d` | Create the LXC if needed, then `docker compose up` (under a second if it already runs) |
+| `down` | `compose down`, then shut the LXC down. `--keep-running` to leave it on |
+| `plan` | Resolve the config and write `lxc.json` without creating anything |
+| `apply` | Push `lxc.json` changes to the container: RAM, CPU, disk, IP, VLAN, mount |
+| `adopt [ctid]` | Generate `lxc.json` from an existing container |
+| `status` / `doctor` | Container and compose status / 10 health checks |
+| `shell` | Shell inside the LXC |
+| `destroy` | Compose down and destroy the LXC. The folder stays |
+| `overview` | Docker containers across all LXCs |
+| `setup` / `template` | Global defaults / Docker-ready template |
 
-### Docker Compose Pass-through
+Any other compose command goes straight to the container: `logs`, `exec`, `ps`, `pull`,
+`restart`, `build`, `run`, `stop`, `top` and the rest. Global flags: `--dry-run`, `--debug`.
 
-All standard `docker compose` commands are forwarded to the container:
-
-```bash
-pve-compose logs -f              # follow logs
-pve-compose exec -it app bash    # shell into a service
-pve-compose ps -a                # list containers
-pve-compose pull                 # pull latest images
-pve-compose restart              # restart services
-```
-
-29 commands supported: `attach` `build` `commit` `config` `cp` `create` `events` `exec` `export` `images` `kill` `logs` `ls` `pause` `port` `ps` `pull` `push` `restart` `rm` `run` `scale` `start` `stats` `stop` `top` `unpause` `wait` `watch`
-
-### Workflow
-
-**Zero-config** (simplest path):
-
-```bash
-mkdir myapp && cd myapp
-# add your docker-compose.yml
-pve-compose up -d
-```
-
-**Already have LXC containers?** Bring them in without touching them:
-
-```bash
-cd /data/app/immich      # the directory the container bind-mounts
-pve-compose adopt        # finds the CT by its mount, writes lxc.json
-pve-compose doctor
-```
-
-**With customization**:
-
-```bash
-mkdir myapp && cd myapp
-# add your docker-compose.yml
-pve-compose plan         # generates lxc.json with auto-detected values
-nano lxc.json            # adjust memory, IP, storage, etc.
-pve-compose up -d        # uses your customized config
-```
-
-## Lifecycle
-
-```
-$PWD (your project folder)
-  │
-  pve-compose up -d
-  │
-  ├── Generates lxc.json (if missing)
-  ├── Creates LXC (or clones from template)
-  ├── Bind-mounts $PWD → /data inside LXC
-  ├── Installs Docker (if not present)
-  └── Runs docker compose up -d
-```
-
-Every command (`status`, `logs`, `exec`, `down`, `destroy`, ...) works from the same folder, `$PWD` is always the context.
-
-## Configuration
-
-`pve-compose plan` auto-generates an `lxc.json` in your project directory:
+## lxc.json
 
 ```json
 {
-  "hostname": "speedtest",
-  "ctid": 100,
+  "hostname": "immich",
+  "ctid": 200,
+  "template": "9000",
   "storage": "local-zfs",
-  "disk": "8G",
-  "cores": 1,
-  "memory": 1024,
-  "swap": 512,
-  "ipv4": "dhcp",
+  "disk": "20G",
+  "cores": 2,
+  "memory": 4096,
+  "ipv4": "192.168.1.200/24",
   "gateway": "192.168.1.1",
-  "bridge": "vmbr0"
+  "bridge": "vmbr0",
+  "vlan": 20,
+  "mount": { "source": "/data/app/immich", "target": "/data" }
 }
 ```
 
-Every field is auto-detected. Edit only what you need to change.
+Any field you leave out comes from the global config (`/etc/pve-compose/pve-compose.json`) or
+gets detected from the host. Full reference in [docs/configuration.md](docs/configuration.md).
 
-See [docs/configuration.md](docs/configuration.md) for the full reference.
+## Docs
 
-## Documentation
-
-| Document | Description |
-|---|---|
-| [Getting Started](docs/getting-started.md) | Step-by-step setup guide |
-| [Commands Reference](docs/commands.md) | Every command, flag, and example |
-| [Configuration](docs/configuration.md) | `lxc.json` and global config reference |
-| [Templates](docs/templates.md) | Template creation, cloning, management |
-| [Architecture](docs/architecture.md) | Code structure, modules, data flow |
-| [Performance](docs/performance.md) | Benchmarks and design decisions |
-| [Troubleshooting](docs/troubleshooting.md) | Common issues and `doctor` checks |
-| [FAQ](docs/faq.md) | Why LXC? Why shell? Why not VMs? |
-
-## Project Structure
-
-```
-pve-compose/
-├── bin/pve-compose          # Entry point - flag parsing + command dispatch
-├── lib/                     # Core libraries (12 modules, sourced on demand)
-├── commands/                # One file per command (15 custom + 29 pass-through)
-├── scripts/                 # Scripts executed inside LXC (Docker bootstrap)
-├── completions/             # Bash completion
-├── debian/                  # .deb packaging
-├── tests/                   # Test suite
-├── docs/                    # Extended documentation
-└── Makefile                 # install, lint, test, deb, clean
-```
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+[Getting started](docs/getting-started.md) ·
+[Commands](docs/commands.md) ·
+[Configuration](docs/configuration.md) ·
+[Templates](docs/templates.md) ·
+[Architecture](docs/architecture.md) ·
+[Performance](docs/performance.md) ·
+[Troubleshooting](docs/troubleshooting.md) ·
+[FAQ](docs/faq.md) ·
+[Contributing](CONTRIBUTING.md)
 
 ## License
 

@@ -152,6 +152,8 @@ cmd_up() {
             if [ -n "$_dns" ]; then
                 _pct_run set "$_ctid" --nameserver "$_dns"
             fi
+            # BUGFIX: clones kept the template's rootfs size, ignoring "disk"
+            lxc_grow_rootfs "$_ctid" "$_disk"
         else
             # Create from OS template tarball (slow ~3min)
             lxc_create "$_ctid" "$_template" "$_storage" "$_disk" \

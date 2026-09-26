@@ -160,6 +160,27 @@ lxc_clone() {
     fi
 }
 
+# lxc_grow_rootfs CTID SIZE - grow rootfs to SIZE (e.g. "8G" or "8") if smaller
+# A clone inherits the template's rootfs size (often 2G), and `pct clone` has
+# no size option, so the requested disk was silently ignored on the clone path.
+# Only grows: shrinking a rootfs is not supported by Proxmox.
+lxc_grow_rootfs() {
+    _ctid="$1"
+    _want=$(printf '%s' "$2" | sed 's/[gG]$//')
+    _conf="/etc/pve/lxc/${_ctid}.conf"
+
+    [ -f "$_conf" ] || return 0   # dry-run: container was never created
+    _cur=$(sed -n '/^\[/q; s/^rootfs: .*size=\([0-9]*\)[gG].*/\1/p' "$_conf")
+    [ -n "$_cur" ] || { warn "Could not read rootfs size of CT $_ctid - skipping resize"; return 0; }
+
+    if [ "$_want" -gt "$_cur" ]; then
+        step "Growing rootfs of $_ctid: ${_cur}G → ${_want}G..."
+        _pct_run resize "$_ctid" rootfs "${_want}G"
+    elif [ "$_want" -lt "$_cur" ]; then
+        warn "Requested disk ${_want}G is smaller than the template's ${_cur}G - keeping ${_cur}G"
+    fi
+}
+
 # lxc_start CTID
 lxc_start() {
     step "Starting container $1..."

@@ -3,7 +3,7 @@
 # Entry point: flag parsing + dynamic command dispatch
 set -eu
 
-PVC_VERSION="1.1.1"
+PVC_VERSION="1.2.0"
 
 # ── Resolve PVC_LIB (where lib/, commands/, scripts/ live) ──
 if [ -d "/usr/lib/pve-compose" ]; then
@@ -42,14 +42,16 @@ pve-compose Commands:
   init          Create global config with auto-detected defaults
   plan          Resolve config and generate lxc.json (dry-run)
   up            Create LXC, install Docker, run compose up
+  down          Compose down, then shut the LXC down
   destroy       Compose down + stop and destroy LXC
+  adopt         Generate lxc.json from an existing LXC
   shell         Open interactive shell in the LXC
   status        Show LXC and compose status
   version       Show pve-compose version
   template      Manage LXC templates (create/list/remove)
 
 Compose Commands (pass-through to docker compose):
-  attach build commit config cp create down events exec export
+  attach build commit config cp create events exec export
   images kill logs ls pause port ps pull push restart rm run
   scale start stats stop top unpause wait watch
 

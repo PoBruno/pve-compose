@@ -126,10 +126,12 @@ dpkg -r pve-compose
 | `pve-compose template create` | Build a Docker-ready LXC template (~2 min) |
 | `pve-compose plan` | Preview resolved config, generate `lxc.json` |
 | `pve-compose up -d` | Create LXC + install Docker + start compose |
+| `pve-compose down` | Compose down + shut the LXC down (`--keep-running` to keep it on) |
 | `pve-compose status` | Show container and service status |
 | `pve-compose doctor` | Run 10 health checks on the project |
 | `pve-compose apply` | Apply `lxc.json` changes to existing container |
 | `pve-compose destroy` | Tear down compose + stop + destroy LXC |
+| `pve-compose adopt` | Generate `lxc.json` from an LXC you already have |
 | `pve-compose shell` | Open a shell inside the LXC |
 | `pve-compose overview` | List Docker containers across all LXCs |
 
@@ -143,10 +145,9 @@ pve-compose exec -it app bash    # shell into a service
 pve-compose ps -a                # list containers
 pve-compose pull                 # pull latest images
 pve-compose restart              # restart services
-pve-compose down                 # stop and remove containers
 ```
 
-28 commands supported: `attach` `build` `commit` `config` `cp` `create` `down` `events` `exec` `export` `images` `kill` `logs` `ls` `pause` `port` `ps` `pull` `push` `restart` `rm` `run` `scale` `start` `stats` `stop` `top` `unpause` `wait` `watch`
+29 commands supported: `attach` `build` `commit` `config` `cp` `create` `events` `exec` `export` `images` `kill` `logs` `ls` `pause` `port` `ps` `pull` `push` `restart` `rm` `run` `scale` `start` `stats` `stop` `top` `unpause` `wait` `watch`
 
 ### Workflow
 
@@ -156,6 +157,14 @@ pve-compose down                 # stop and remove containers
 mkdir myapp && cd myapp
 # add your docker-compose.yml
 pve-compose up -d
+```
+
+**Already have LXC containers?** Bring them in without touching them:
+
+```bash
+cd /data/app/immich      # the directory the container bind-mounts
+pve-compose adopt        # finds the CT by its mount, writes lxc.json
+pve-compose doctor
 ```
 
 **With customization**:
@@ -225,8 +234,8 @@ See [docs/configuration.md](docs/configuration.md) for the full reference.
 ```
 pve-compose/
 ├── bin/pve-compose          # Entry point - flag parsing + command dispatch
-├── lib/                     # Core libraries (11 modules, sourced on demand)
-├── commands/                # One file per command (13 custom + 28 pass-through)
+├── lib/                     # Core libraries (12 modules, sourced on demand)
+├── commands/                # One file per command (15 custom + 29 pass-through)
 ├── scripts/                 # Scripts executed inside LXC (Docker bootstrap)
 ├── completions/             # Bash completion
 ├── debian/                  # .deb packaging

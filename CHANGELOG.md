@@ -4,9 +4,30 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [1.1.1] - 2026-09-26
+## [1.2.0] - 2026-09-26
 
-Bug-fix release: several `lxc.json` fields were silently ignored.
+### Added
+
+- **`pve-compose adopt`** (#3): brings an existing LXC under pve-compose management. It finds the
+  container whose bind mount points at the current directory (or takes a CTID), reads
+  `/etc/pve/lxc/<ctid>.conf` and writes a matching `lxc.json`. Handles trailing slashes, mounts
+  in any `mpN` slot, nested directories, unprivileged containers and VLAN tags. `apply` right
+  after adopting reports no changes. `--force` overwrites, `--dry-run` only prints.
+- **VLAN support** (#5): `"vlan": 20` in `lxc.json` (or `defaults.vlan` in the global config)
+  becomes `tag=20` on `net0`, on create, on clone and through `apply`. IDs are validated
+  (1-4094), `"vlan": 0` removes a tag, and `plan` says whether the bridge is VLAN aware.
+- `apply --yes` restarts without asking, for scripts and cron.
+- `lib/resolve.sh`: shared parser for container configs.
+
+### Changed
+
+- **`down` shuts the LXC down** (#4) after `docker compose down`, since one LXC is one stack.
+  Compose flags (`-v`, `--rmi`, ...) still go through first, the shutdown is graceful (forced
+  after 60s) and `--keep-running` keeps the old behaviour. `up` starts it again through the
+  fast path.
+- `hostname` in `lxc.json` now wins over `basename $PWD` (`basename` stays the default).
+- `plan` and `up` refuse to generate a new `lxc.json` in a directory that an existing container
+  already mounts and point to `adopt`, instead of creating a second container on the same data.
 
 ### Fixed
 
@@ -26,6 +47,12 @@ Bug-fix release: several `lxc.json` fields were silently ignored.
 - **Mount slots**: a free `mpN` slot is used instead of always overwriting `mp0`.
 - **`lxc_wait_running`** counted 0.1s sleeps as 1s (timeout 100 waited 10s).
 - **CTID race**: the CTID is re-checked right before `pct create`.
+- **`apply` changed the MAC address** (and dropped `firewall=1`) whenever the IP changed, because
+  `net0` was rebuilt from scratch. It is now updated in place.
+- **`apply` started stopped containers** after a restart-required change. A stopped container
+  now stays stopped.
+- **`confirm` crashed without a terminal** (`cannot open /dev/tty`, then an unset variable
+  under `set -u`). It now answers no.
 
 ## [1.1.0] - 2026-03-10
 

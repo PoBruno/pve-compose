@@ -1,3 +1,15 @@
+pve-compose (1.1.1-1) unstable; urgency=medium
+
+  * Release v1.1.1
+  * up: grow the rootfs to lxc.json "disk" after cloning from a template
+  * apply: resize rootfs, configure bind mount, warn on storage/template changes
+  * config: safe disk unit parsing, validated numeric/boolean fields,
+    "swap": 0 preserved, features object honoured and order-normalized
+  * mount: pick a free mpN slot instead of overwriting mp0
+  * lxc: fix wait timeout and re-check CTID right before create
+
+ -- Bruno Poleza Gomes <bruno.plza@proton.me>  Sat, 26 Sep 2026 00:00:00 +0000
+
 pve-compose (1.1.0-1) unstable; urgency=low
 
   * Release v1.1.0

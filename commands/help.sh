@@ -17,6 +17,8 @@ _help_description() {
         setup)     printf "Configure global pve-compose defaults" ;;
         doctor)    printf "Diagnose project health (10 checks)" ;;
         apply)     printf "Apply lxc.json changes to existing container" ;;
+        adopt)     printf "Generate lxc.json from an existing LXC container" ;;
+        down)      printf "Compose down, then shut the LXC container down" ;;
         overview)  printf "List Docker containers across all LXCs" ;;
         # compose pass-through
         attach)    printf "Attach to a service's running container (compose)" ;;
@@ -25,7 +27,6 @@ _help_description() {
         config)    printf "Validate and view the Compose file (compose)" ;;
         cp)        printf "Copy files between service containers and host (compose)" ;;
         create)    printf "Create containers for a service (compose)" ;;
-        down)      printf "Stop and remove containers, networks (compose)" ;;
         events)    printf "Receive real-time events from containers (compose)" ;;
         exec)      printf "Execute a command in a running service container (compose)" ;;
         export)    printf "Export a service container's filesystem as tar (compose)" ;;
@@ -69,12 +70,12 @@ Options:
 
 pve-compose Commands:
 EOF
-        for _c in init setup plan up destroy shell status doctor apply overview version template help; do
+        for _c in init setup plan up down destroy adopt shell status doctor apply overview version template help; do
             printf "  %-14s%s\n" "$_c" "$(_help_description "$_c")"
         done
 
         printf "\nCompose Commands (pass-through to docker compose):\n"
-        for _c in attach build commit config cp create down events exec export \
+        for _c in attach build commit config cp create events exec export \
                   images kill logs ls pause port ps pull push restart rm run \
                   scale start stats stop top unpause wait watch; do
             printf "  %-14s%s\n" "$_c" "$(_help_description "$_c")"
@@ -196,11 +197,53 @@ EOF
             cat <<'EOF'
 Compare lxc.json with the actual container config and apply changes.
 
-Hot-apply fields (no restart): memory, swap, cores, tags, dns
-Restart-required fields: hostname, features, network (IP/bridge/gateway)
+Hot-apply fields (no restart): memory, swap, cores, tags, dns, disk (grow only), mount
+Restart-required fields: hostname, features, network (IP/bridge/gateway/vlan)
+
+The network update keeps the MAC address, firewall flag and any other
+net0 option. "vlan": 0 removes the tag, no vlan field leaves it alone.
+A stopped container stays stopped; a running one is restarted.
+
+Options:
+  --yes, -y     Restart without asking (needed when there is no terminal)
 
 Example:
   pve-compose apply
+  pve-compose apply --yes
+EOF
+            ;;
+        adopt)
+            cat <<'EOF'
+Bring an existing LXC container under pve-compose management.
+Reads /etc/pve/lxc/<ctid>.conf and writes a matching lxc.json.
+
+Without a CTID, finds the container whose bind mount source is the
+current directory, falling back to a container named like the directory.
+The real hostname is kept even if it differs from the directory name.
+
+Options:
+  CTID          Adopt this container instead of auto-detecting
+  --force, -f   Overwrite an existing lxc.json
+
+Example:
+  cd /data/app/immich && pve-compose adopt
+  cd /data/app/nextcloud && pve-compose adopt 201
+  pve-compose --dry-run adopt        # print the lxc.json, write nothing
+EOF
+            ;;
+        down)
+            cat <<'EOF'
+Run docker compose down inside the LXC, then shut the container down.
+Flags like -v or --rmi are passed to docker compose. The next
+'pve-compose up' starts the container again through the fast path.
+
+Options:
+  --keep-running   Only compose down, leave the LXC running
+
+Example:
+  pve-compose down
+  pve-compose down -v
+  pve-compose down --keep-running
 EOF
             ;;
         setup)

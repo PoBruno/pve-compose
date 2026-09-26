@@ -75,11 +75,19 @@ _pve_compose() {
 
     # Commands that accept service names
     case "$cmd" in
-        exec|run|logs|attach|start|stop|restart|kill|pause|unpause|rm|pull|build|create|up|down|ps|top|port|events|images|config)
+        down)
+            COMPREPLY=( $(compgen -W "--keep-running -v --volumes --rmi --remove-orphans" -- "$cur") )
+            ;;
+        exec|run|logs|attach|start|stop|restart|kill|pause|unpause|rm|pull|build|create|up|ps|top|port|events|images|config)
             COMPREPLY=( $(compgen -W "$(_pvc_services)" -- "$cur") )
             ;;
         template)
             COMPREPLY=( $(compgen -W "create list remove" -- "$cur") )
+            ;;
+        adopt)
+            local ids
+            ids=$(ls /etc/pve/lxc/ 2>/dev/null | sed -n 's/\.conf$//p')
+            COMPREPLY=( $(compgen -W "--force $ids" -- "$cur") )
             ;;
         help)
             COMPREPLY=( $(compgen -W "$(_pvc_commands)" -- "$cur") )

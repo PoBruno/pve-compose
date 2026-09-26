@@ -60,8 +60,46 @@ lxc_ensure_running() {
     fi
 }
 
+# lxc_build_net0 BRIDGE IPV4 GATEWAY [VLAN] - net0 string for a new container
+# VLAN 1-4094 adds an 802.1q tag; empty or 0 means untagged.
+lxc_build_net0() {
+    _bn="name=eth0,bridge=$1"
+    if [ "$2" = "dhcp" ]; then
+        _bn="$_bn,ip=dhcp"
+    else
+        _bn="$_bn,ip=$2"
+        [ -n "$3" ] && _bn="$_bn,gw=$3"
+    fi
+    case "${4:-}" in
+        ''|0) ;;
+        *) _bn="$_bn,tag=$4" ;;
+    esac
+    printf '%s' "$_bn"
+}
+
+# lxc_merge_net0 CURRENT BRIDGE IPV4 GATEWAY VLAN - update an existing net0
+# Replaces bridge/ip/gw and keeps everything else (hwaddr, firewall, type,
+# mtu...). Rebuilding net0 from scratch gave the container a new MAC address
+# and dropped firewall=1 every time the IP changed.
+# VLAN: empty keeps the current tag, 0 removes it, 1-4094 sets it.
+lxc_merge_net0() {
+    _mn_cur="$1" _mn_bridge="$2" _mn_ip="$3" _mn_gw="$4" _mn_vlan="$5"
+    _mn_tag=$(printf '%s' "$_mn_cur" | tr ',' '\n' | sed -n 's/^tag=//p')
+    case "$_mn_vlan" in
+        '') ;;
+        0)  _mn_tag="" ;;
+        *)  _mn_tag="$_mn_vlan" ;;
+    esac
+    _mn_keep=$(printf '%s' "$_mn_cur" | tr ',' '\n' \
+        | grep -v -e '^name=' -e '^bridge=' -e '^ip=' -e '^gw=' -e '^tag=' -e '^$' \
+        | paste -sd, -)
+    _mn_new=$(lxc_build_net0 "$_mn_bridge" "$_mn_ip" "$_mn_gw" "$_mn_tag")
+    [ -n "$_mn_keep" ] && _mn_new="$_mn_new,$_mn_keep"
+    printf '%s' "$_mn_new"
+}
+
 # lxc_create - create LXC container from resolved lxc.json fields
-# Args: CTID TEMPLATE STORAGE DISK HOSTNAME CORES MEMORY SWAP BRIDGE IPV4 GATEWAY DNS PRIVILEGED FEATURES_STR TAGS
+# Args: CTID TEMPLATE STORAGE DISK HOSTNAME CORES MEMORY SWAP BRIDGE IPV4 GATEWAY DNS PRIVILEGED FEATURES_STR TAGS [VLAN]
 lxc_create() {
     _ctid="$1"
     _template="$2"
@@ -79,6 +117,7 @@ lxc_create() {
     _privileged="$4"
     _features="$5"
     _tags="$6"
+    _vlan="${7:-}"
 
     # Determine unprivileged flag
     if [ "$_privileged" = "true" ]; then
@@ -87,16 +126,7 @@ lxc_create() {
         _unpriv=1
     fi
 
-    # Build net0 string
-    _net0="name=eth0,bridge=$_bridge"
-    if [ "$_ipv4" = "dhcp" ]; then
-        _net0="$_net0,ip=dhcp"
-    else
-        _net0="$_net0,ip=$_ipv4"
-        if [ -n "$_gateway" ]; then
-            _net0="$_net0,gw=$_gateway"
-        fi
-    fi
+    _net0=$(lxc_build_net0 "$_bridge" "$_ipv4" "$_gateway" "$_vlan")
 
     # Resolve template path (add local:vztmpl/ prefix if needed)
     case "$_template" in

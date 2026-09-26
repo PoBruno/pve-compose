@@ -14,8 +14,14 @@ engine_resolve() {
     config_load_lxc_json || true
     config_load_global || true
 
-    # ── hostname (always basename of $PWD) ──
-    _hostname=$(basename "$(pwd)")
+    # ── hostname (lxc.json > basename of $PWD) ──
+    # basename is the zero-config default. An adopted container keeps its
+    # real hostname even when the directory has another name.
+    _hostname=""
+    if [ -n "$_lxc_json" ]; then
+        _hostname=$(printf '%s' "$_lxc_json" | jq -r '.hostname // empty' 2>/dev/null)
+    fi
+    [ -n "$_hostname" ] || _hostname=$(basename "$(pwd)")
     debug "hostname: $_hostname"
 
     # ── privileged (lxc.json only > default true) ──
@@ -76,6 +82,7 @@ engine_resolve() {
     _swap=$(config_get_field "swap" "512")
     _ipv4=$(config_get_field "ipv4" "dhcp")
     _bridge=$(config_get_field "bridge" "")
+    _vlan=$(config_get_field "vlan" "")
 
     # ── Validate before they reach jq ──
     # Previously these were passed straight to `jq --argjson`, which failed
@@ -85,6 +92,7 @@ engine_resolve() {
     config_require_uint "$_memory" "memory"
     config_require_uint "$_swap"   "swap"
     _privileged=$(config_require_bool "$_privileged" "privileged")
+    [ -n "$_vlan" ] && config_require_vlan "$_vlan"
     # normalize disk early so a bad value fails here, not inside pct
     _disk_gb=$(config_normalize_disk "$_disk")
     _disk="${_disk_gb}G"
@@ -128,7 +136,7 @@ engine_resolve() {
     [ -n "$_tags_raw" ] || _tags_raw="{ipv4}"
 
     debug "disk=$_disk cores=$_cores memory=$_memory swap=$_swap"
-    debug "ipv4=$_ipv4 gateway=$_gateway dns=$_dns bridge=$_bridge"
+    debug "ipv4=$_ipv4 gateway=$_gateway dns=$_dns bridge=$_bridge vlan=${_vlan:-none}"
     debug "mount: $_mount_source → $_mount_target"
 
     # ── Generate resolved JSON (without tags - need it for tags_expand) ──
@@ -150,6 +158,7 @@ engine_resolve() {
         --arg feat_keyctl "$_feat_keyctl" \
         --arg mount_source "$_mount_source" \
         --arg mount_target "$_mount_target" \
+        --arg vlan "$_vlan" \
         '{
             hostname: $hostname,
             ctid: ($ctid | tonumber),
@@ -172,7 +181,7 @@ engine_resolve() {
                 source: $mount_source,
                 target: $mount_target
             }
-        }')
+        } + (if $vlan == "" then {} else {vlan: ($vlan | tonumber)} end)')
 
     # ── Expand tag templates {hostname}, {ipv4}, etc. ──
     _tags_expanded=$(tags_expand "$_tags_raw" "$_resolved_json")

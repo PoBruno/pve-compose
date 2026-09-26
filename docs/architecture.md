@@ -19,7 +19,7 @@ pve-compose is a ~2,000 line POSIX shell project that orchestrates Docker Compos
 ```
 pve-compose/
 ├── bin/pve-compose                     # Entry point (107 lines)
-├── lib/                                # Shared libraries (11 modules)
+├── lib/                                # Shared libraries (12 modules)
 │   ├── output.sh                       # Terminal formatting, colors, die/msg/warn
 │   ├── config.sh                       # JSON config parsing (jq)
 │   ├── engine.sh                       # Resolution engine (config chain)
@@ -30,10 +30,11 @@ pve-compose/
 │   ├── mount.sh                        # Bind mount configuration
 │   ├── permissions.sh                  # Permission engine (passive)
 │   ├── prompt.sh                       # Interactive prompts (whiptail TUI)
+│   ├── resolve.sh                      # Read existing container configs (adopt, plan guard)
 │   └── tags.sh                         # Tag template expansion
 ├── commands/                           # One file per command
-│   ├── up.sh, plan.sh, destroy.sh ...  # 13 custom commands
-│   ├── logs.sh, exec.sh, ps.sh ...     # 28 pass-through commands (~5 lines each)
+│   ├── up.sh, plan.sh, destroy.sh ...  # 15 custom commands
+│   ├── logs.sh, exec.sh, ps.sh ...     # 29 pass-through commands (~5 lines each)
 │   └── template/                       # Template sub-commands
 │       ├── create.sh, list.sh, remove.sh
 ├── scripts/
@@ -134,7 +135,7 @@ The `_pct_run()` wrapper handles `--dry-run` mode for all destructive `pct` oper
 
 ### `lib/compose.sh` - Pass-through helper
 
-`compose_passthrough(CMD, ARGS)` - loads config, ensures container is running, forwards to `docker_compose_exec()`. Used by all 28 pass-through commands.
+`compose_passthrough(CMD, ARGS)` - loads config, ensures container is running, forwards to `docker_compose_exec()`. Used by all 29 pass-through commands.
 
 ### `lib/prompt.sh` - Interactive prompts
 

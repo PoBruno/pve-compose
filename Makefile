@@ -1,5 +1,5 @@
 PACKAGE  := pve-compose
-VERSION  := 1.1.0
+VERSION  := 1.1.1
 PREFIX   := /usr
 DESTDIR  :=
 LIBDIR   := $(DESTDIR)$(PREFIX)/lib/$(PACKAGE)

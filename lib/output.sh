@@ -57,7 +57,13 @@ step() {
 # confirm PROMPT - interactive [y/N], returns 0 if yes
 confirm() {
     printf "%s [y/N] " "$*"
-    read -r _answer </dev/tty
+    # No terminal (cron, CI, scripts): answer no instead of crashing on
+    # "cannot open /dev/tty" / unset _answer under set -u.
+    _answer=""
+    if ! { read -r _answer </dev/tty; } 2>/dev/null; then
+        printf 'n (no terminal)\n'
+        return 1
+    fi
     case "$_answer" in
         [yY]|[yY][eE][sS]) return 0 ;;
         *) return 1 ;;

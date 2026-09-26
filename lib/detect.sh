@@ -112,3 +112,15 @@ detect_next_ctid() {
     debug "Next available CTID: $_ctid"
     printf '%s' "$_ctid"
 }
+
+# detect_bridge_vlan_aware BRIDGE - true if the bridge has bridge-vlan-aware yes
+# Without it Proxmox still honours tag=N, but builds a separate bridge per
+# VLAN (e.g. vmbr0v20) on top of the bridge port.
+detect_bridge_vlan_aware() {
+    [ -r /etc/network/interfaces ] || return 1
+    awk -v br="$1" '
+        $1 == "iface" { inbr = ($2 == br) ; next }
+        inbr && $1 == "bridge-vlan-aware" && $2 == "yes" { found = 1 }
+        END { exit !found }
+    ' /etc/network/interfaces
+}

@@ -3,7 +3,7 @@
 # Sourced by commands - never executed directly.
 # Depends: lib/output.sh (for die, debug)
 
-PVC_GLOBAL_CONFIG="/etc/pve-compose/pve-compose.json"
+PVC_GLOBAL_CONFIG="${PVC_GLOBAL_CONFIG:-/etc/pve-compose/pve-compose.json}"
 PVC_LXC_JSON="lxc.json"
 PVC_STATE_DIR=".pve-compose"
 export PVC_STATE_DIR
@@ -105,6 +105,13 @@ config_require_bool() {
         false|no|0)  printf 'false'; return 0 ;;
     esac
     die "Invalid value for '$2': '$1' (expected true or false)"
+}
+
+# config_require_vlan VALUE - 802.1q tag: 1-4094, or 0 to clear a tag
+# 0 and 4095 are reserved by the standard; 0 is accepted only as "untagged".
+config_require_vlan() {
+    config_is_uint "$1" || die "Invalid value for 'vlan': '$1' (expected a VLAN ID from 1 to 4094)"
+    [ "$1" -le 4094 ] || die "Invalid value for 'vlan': '$1' (VLAN IDs go from 1 to 4094)"
 }
 
 # config_normalize_disk VALUE - normalize a disk size to plain GB (no suffix)
@@ -238,5 +245,5 @@ config_write_lxc_json() {
             privileged: .privileged,
             features: .features,
             mount: .mount
-        }' > "$PVC_LXC_JSON"
+        } + (if (.vlan // 0) > 0 then {vlan: .vlan} else {} end)' > "$PVC_LXC_JSON"
 }

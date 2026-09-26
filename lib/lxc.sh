@@ -29,11 +29,15 @@ lxc_is_running() {
 
 # lxc_wait_running CTID [TIMEOUT_S] - poll until container is running
 # Used after pct start to avoid race condition with lxc-attach
+#
+# BUGFIX: the old loop slept 0.1s but incremented the counter by 1, so a
+# "timeout" of 100 actually waited 10 seconds. Now counts in tenths.
 lxc_wait_running() {
     _wctid="$1"
     _timeout="${2:-10}"
+    _ticks=$(( _timeout * 10 ))   # 0.1s per tick
     _elapsed=0
-    while [ "$_elapsed" -lt "$_timeout" ]; do
+    while [ "$_elapsed" -lt "$_ticks" ]; do
         lxc_is_running "$_wctid" && return 0
         sleep 0.1
         _elapsed=$(( _elapsed + 1 ))
@@ -101,8 +105,16 @@ lxc_create() {
         *)   _tmpl_path="local:vztmpl/$_template" ;;   # bare filename
     esac
 
-    # Strip trailing G/g from disk size (pct expects number only)
+    # Strip trailing G/g from disk size (pct expects number only).
+    # config_normalize_disk already rejects bad units upstream; this is a
+    # last-resort guard in case lxc_create is called directly.
     _disk=$(printf '%s' "$_disk" | sed 's/[gG]$//')
+
+    # Re-check the CTID right before creating. detect_next_ctid may have run
+    # minutes earlier (slow interactive wizard) and the ID could be taken now.
+    if lxc_exists "$_ctid"; then
+        die "CTID $_ctid is already in use (container exists). Pick another ctid in lxc.json."
+    fi
 
     step "Creating container $_ctid ($_hostname)..."
 
@@ -145,6 +157,27 @@ lxc_clone() {
     else
         # Different storage - full clone
         _pct_run clone "$_src" "$_dst" --full --storage "$_target_storage"
+    fi
+}
+
+# lxc_grow_rootfs CTID SIZE - grow rootfs to SIZE (e.g. "8G" or "8") if smaller
+# A clone inherits the template's rootfs size (often 2G), and `pct clone` has
+# no size option, so the requested disk was silently ignored on the clone path.
+# Only grows: shrinking a rootfs is not supported by Proxmox.
+lxc_grow_rootfs() {
+    _ctid="$1"
+    _want=$(printf '%s' "$2" | sed 's/[gG]$//')
+    _conf="/etc/pve/lxc/${_ctid}.conf"
+
+    [ -f "$_conf" ] || return 0   # dry-run: container was never created
+    _cur=$(sed -n '/^\[/q; s/^rootfs: .*size=\([0-9]*\)[gG].*/\1/p' "$_conf")
+    [ -n "$_cur" ] || { warn "Could not read rootfs size of CT $_ctid - skipping resize"; return 0; }
+
+    if [ "$_want" -gt "$_cur" ]; then
+        step "Growing rootfs of $_ctid: ${_cur}G → ${_want}G..."
+        _pct_run resize "$_ctid" rootfs "${_want}G"
+    elif [ "$_want" -lt "$_cur" ]; then
+        warn "Requested disk ${_want}G is smaller than the template's ${_cur}G - keeping ${_cur}G"
     fi
 }
 
